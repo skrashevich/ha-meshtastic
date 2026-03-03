@@ -130,6 +130,8 @@ class MeshInterface:
         acknowledgement_timeout: datetime.timedelta | None = None,
         response_timeout: datetime.timedelta | None = None,
         enable_mqtt_proxy: bool = True,
+        enable_mqtt_downlink: bool = False,
+        enable_mqtt_uplink_relay: bool = False,
     ) -> None:
         self._logger = LOGGER.getChild(self.__class__.__name__)
         self._connection = connection
@@ -173,6 +175,8 @@ class MeshInterface:
 
         # MQTT client for persistent connection
         self._mqtt_proxy_enabled = enable_mqtt_proxy
+        self._mqtt_downlink_enabled = enable_mqtt_downlink
+        self._mqtt_uplink_relay_enabled = enable_mqtt_uplink_relay
         if self._mqtt_proxy_enabled and not _has_aiomqtt:
             self._logger.warning("Could not enable MQTT proxy because aiomqtt is not installed")
             self._mqtt_proxy_enabled = False
@@ -460,7 +464,8 @@ class MeshInterface:
                     self._logger.debug("Connected to MQTT broker")
 
                     # Subscribe to downlink topics for all enabled channels
-                    await self._subscribe_to_downlink_topics()
+                    if self._mqtt_downlink_enabled:
+                        await self._subscribe_to_downlink_topics()
 
                     # Listen for incoming MQTT messages and forward to radio
                     async for message in self._mqtt_client.messages:
@@ -720,7 +725,8 @@ class MeshInterface:
             await self._process_packet_for_app_listener(from_radio)
 
             # Relay LoRa-received packets to MQTT for channels with uplink_enabled
-            await self._relay_lora_to_mqtt(from_radio)
+            if self._mqtt_uplink_relay_enabled:
+                await self._relay_lora_to_mqtt(from_radio)
 
     async def _relay_lora_to_mqtt(self, from_radio: mesh_pb2.FromRadio) -> None:
         """Relay LoRa-received packets to MQTT for channels with uplink_enabled.
