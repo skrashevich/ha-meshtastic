@@ -68,6 +68,19 @@ if TYPE_CHECKING:
 _LOGGER = LOGGER.getChild(__name__)
 
 
+def _node_user_label(node_info: dict[str, Any]) -> str:
+    user = node_info.get("user", {})
+    name = (
+        user.get("longName")
+        or user.get("long_name")
+        or user.get("shortName")
+        or user.get("short_name")
+        or user.get("id")
+        or "?"
+    )
+    node_id = user.get("id", str(node_info.get("num", "?")))
+    return f"{name} ({node_id})"
+
 def _step_user_data_connection_tcp_schema_factory(host: str = "", port: int | None = None) -> vol.Schema:
     return vol.Schema(
         {
@@ -116,7 +129,7 @@ def _build_add_node_schema(
     selector_options = [
         SelectOptionDict(
             value=str(node_id),
-            label=f"{node_info['user']['longName']} ({node_info['user']['id']})",
+            label=_node_user_label(node_info),
         )
         for node_id, node_info in sorted(
             selectable_nodes.items(),
@@ -518,7 +531,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 self.options[CONF_OPTION_FILTER_NODES].append(
                     {
                         "id": node_id,
-                        "name": self.nodes[node_id]["user"]["longName"],
+                        "name": _node_user_label(self.nodes[node_id]),
                     }
                 )
                 if user_input.get(CONF_OPTION_ADD_ANOTHER_NODE, False):
@@ -564,7 +577,9 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _finish_steps(self) -> ConfigFlowResult:
         return self.async_create_entry(
-            title=self.gateway_node["user"]["longName"], data=self.data, options=self.options
+            title=_node_user_label(self.gateway_node),
+            data=self.data,
+            options=self.options,
         )
 
     @staticmethod
@@ -622,7 +637,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             if CONF_OPTION_FILTER_NODES in self.options
             else self.config_entry.options[CONF_OPTION_FILTER_NODES]
         )
-        all_nodes = {str(k): v["user"]["longName"] for k, v in self.nodes.items()}
+        all_nodes = {str(k): _node_user_label(v) for k, v in self.nodes.items()}
         already_selected_node_ids = [el["id"] for el in current_filter_node_option]
 
         if user_input is not None:
@@ -642,7 +657,7 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 updated_filter_node_option.append(
                     {
                         "id": int(user_input[CONF_OPTION_NODE]),
-                        "name": self.nodes[int(user_input[CONF_OPTION_NODE])]["user"]["longName"],
+                        "name": _node_user_label(self.nodes[int(user_input[CONF_OPTION_NODE])]),
                     }
                 )
 
