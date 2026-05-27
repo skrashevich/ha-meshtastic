@@ -86,6 +86,7 @@ def _node_user_label(node_info: dict[str, Any]) -> str:
     node_id = user.get("id", str(node_info.get("num", "?")))
     return f"{name} ({node_id})"
 
+
 def _step_user_data_connection_tcp_schema_factory(host: str = "", port: int | None = None) -> vol.Schema:
     return vol.Schema(
         {

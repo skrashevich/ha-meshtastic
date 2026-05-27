@@ -94,10 +94,7 @@ def _normalize_user_dict(user: dict[str, Any], node_num: int) -> None:
         user["shortName"] = user.get("short_name") or suffix
     if "longName" not in user:
         user["longName"] = (
-            user.get("long_name")
-            or user.get("shortName")
-            or user.get("short_name")
-            or f"Meshtastic {suffix}"
+            user.get("long_name") or user.get("shortName") or user.get("short_name") or f"Meshtastic {suffix}"
         )
 
 
@@ -106,12 +103,7 @@ def _mesh_node_from_node_info(node_info: Mapping[str, Any]) -> MeshNode:
     node_num = int(node_info.get("num", 0))
     user_id = user.get("id") or f"!{node_num:08x}"
     short_name = user.get("shortName") or user.get("short_name") or user_id[-4:]
-    long_name = (
-        user.get("longName")
-        or user.get("long_name")
-        or short_name
-        or f"Meshtastic {user_id[-4:]}"
-    )
+    long_name = user.get("longName") or user.get("long_name") or short_name or f"Meshtastic {user_id[-4:]}"
     return MeshNode(
         id=node_num,
         user_id=user_id,
