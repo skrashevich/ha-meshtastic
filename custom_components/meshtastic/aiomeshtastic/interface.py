@@ -83,6 +83,43 @@ class MeshChannel:
     name: str
 
 
+def _normalize_user_dict(user: dict[str, Any], node_num: int) -> None:
+    """Fill missing Meshtastic user fields for incomplete NodeInfo entries."""
+    if not user.get("id"):
+        user["id"] = f"!{node_num:08x}"
+    uid = user["id"]
+    suffix = uid[-4:] if uid.startswith("!") else f"{node_num & 0xFFFF:04x}"
+
+    if "shortName" not in user:
+        user["shortName"] = user.get("short_name") or suffix
+    if "longName" not in user:
+        user["longName"] = (
+            user.get("long_name")
+            or user.get("shortName")
+            or user.get("short_name")
+            or f"Meshtastic {suffix}"
+        )
+
+
+def _mesh_node_from_node_info(node_info: Mapping[str, Any]) -> MeshNode:
+    user = node_info.get("user", {})
+    node_num = int(node_info.get("num", 0))
+    user_id = user.get("id") or f"!{node_num:08x}"
+    short_name = user.get("shortName") or user.get("short_name") or user_id[-4:]
+    long_name = (
+        user.get("longName")
+        or user.get("long_name")
+        or short_name
+        or f"Meshtastic {user_id[-4:]}"
+    )
+    return MeshNode(
+        id=node_num,
+        user_id=user_id,
+        short_name=short_name,
+        long_name=long_name,
+    )
+
+
 def process_while_running(f):  # noqa: ANN001, ANN201
     @functools.wraps(f)
     async def wrapper(self: "MeshInterface") -> None:
@@ -266,24 +303,24 @@ class MeshInterface:
         else:
 
             def matches(node_info: Mapping[str, Any]) -> bool:
-                if user_id is not None and node_info["user"]["id"] == user_id:
+                user = node_info.get("user", {})
+                if user_id is not None and user.get("id") == user_id:
                     return True
-                if short_name is not None and node_info["user"]["shortName"] == short_name:
+                sn = user.get("shortName") or user.get("short_name")
+                if short_name is not None and sn == short_name:
                     return True
+                ln = user.get("longName") or user.get("long_name")
+                return long_name is not None and ln == long_name
 
-                return bool(long_name is not None and node_info["user"]["longName"] == long_name)
-
-            node_info = next((node_info for node_info in self._node_database.values() if matches(node_info)), None)
+            node_info = next(
+                (node_info for node_info in self._node_database.values() if matches(node_info)),
+                None,
+            )
 
         if node_info is None:
             return None
 
-        return MeshNode(
-            id=node_info["num"],
-            user_id=node_info["user"]["id"],
-            short_name=node_info["user"]["shortName"],
-            long_name=node_info["user"]["longName"],
-        )
+        return _mesh_node_from_node_info(node_info)
 
     def find_channel(self, index: int | None = None, name: str | None = None) -> MeshChannel | None:
         if index is None and name is None:
@@ -914,6 +951,8 @@ class MeshInterface:
                 node_info_dict = google.protobuf.json_format.MessageToDict(node_info)
                 db_node = self._get_or_create_node(node_info.num)
                 db_node.update(node_info_dict)
+                if "user" in db_node and isinstance(db_node["user"], dict):
+                    _normalize_user_dict(db_node["user"], node_info.num)
 
                 node = self.find_node(node_id) or MeshNode.stub_node(node_id)
                 node_info_packet = FullNodeInfoPacket(packet)
@@ -953,6 +992,9 @@ class MeshInterface:
         else:
             n = {"num": node_num}
             n.update(node_info)
+
+        if "user" in n and isinstance(n["user"], dict):
+            _normalize_user_dict(n["user"], node_num)
 
         self._node_database[node_num] = n
 
