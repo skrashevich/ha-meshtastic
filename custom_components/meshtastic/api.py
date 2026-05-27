@@ -88,7 +88,7 @@ class MeshtasticApiClientCommunicationError(
 
 
 class MeshtasticApiClient:
-    def __init__(
+    def __init__(  # noqa: PLR0913
         self,
         data: MappingProxyType[str, Any],
         hass: HomeAssistant,

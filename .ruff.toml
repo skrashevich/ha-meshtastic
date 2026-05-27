@@ -33,3 +33,17 @@ keep-runtime-typing = true
 
 [lint.mccabe]
 max-complexity = 25
+
+[lint.per-file-ignores]
+"tests/**/*.py" = [
+    "ANN", # Test fixtures and test functions intentionally keep pytest's compact style
+    "E501", # Long assertions are clearer than awkward line breaks in tests
+    "FBT", # Test factories use boolean flags for readability
+    "F841", # Some test setup documents the object being constructed
+    "PLR0913", # Test factories often expose many knobs
+    "PLR2004", # Test constants are local to the assertion they document
+    "RUF012", # Test classes may use simple class-level expected values
+    "S101", # Pytest uses assert
+    "SIM222", # Test expressions sometimes spell out fallback behavior
+    "SLF001", # Unit tests intentionally exercise private helpers
+]

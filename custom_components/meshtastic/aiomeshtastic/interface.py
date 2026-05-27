@@ -54,6 +54,8 @@ from .protobuf import (
 )
 from .protobuf.mesh_pb2 import MeshPacket
 
+AES_128_KEY_LENGTH = 16
+
 
 class MeshInterfaceError(MeshtasticError):
     def __init__(self, message: str) -> None:
@@ -545,10 +547,7 @@ class MeshInterface:
                         self._logger.exception("Error subscribing to JSON topic: %s", json_topic)
 
         if not subscribed:
-            self._logger.info(
-                "No non-default channels with downlink enabled — "
-                "no MQTT downlink subscriptions created"
-            )
+            self._logger.info("No non-default channels with downlink enabled — no MQTT downlink subscriptions created")
 
     async def _forward_mqtt_to_radio(self, message: aiomqtt.Message) -> None:
         """Forward an incoming MQTT message to the radio as MqttClientProxyMessage."""
@@ -728,8 +727,9 @@ class MeshInterface:
             if self._mqtt_uplink_relay_enabled:
                 await self._relay_lora_to_mqtt(from_radio)
 
-    async def _relay_lora_to_mqtt(self, from_radio: mesh_pb2.FromRadio) -> None:
-        """Relay LoRa-received packets to MQTT for channels with uplink_enabled.
+    async def _relay_lora_to_mqtt(self, from_radio: mesh_pb2.FromRadio) -> None:  # noqa: PLR0911
+        """
+        Relay LoRa-received packets to MQTT for channels with uplink_enabled.
 
         The firmware in proxy mode only generates mqttClientProxyMessage for packets
         the device *originates*. For received LoRa packets, we must re-encrypt the
@@ -772,7 +772,7 @@ class MeshInterface:
         channel_name = channel.settings.name or "LongFast"
 
         # Skip default channels (same policy as downlink)
-        if not hasattr(self, '_mqtt_default_channels') or channel_name in self._mqtt_default_channels:
+        if not hasattr(self, "_mqtt_default_channels") or channel_name in self._mqtt_default_channels:
             return
 
         # Re-encrypt the decoded data using the channel PSK
@@ -806,7 +806,9 @@ class MeshInterface:
             await self._mqtt_client.publish(topic, payload=envelope.SerializeToString(), qos=1)
             self._logger.info(
                 "Relayed LoRa packet to MQTT: topic=%s from=!%08x port=%s",
-                topic, from_node, mp.decoded.portnum,
+                topic,
+                from_node,
+                mp.decoded.portnum,
             )
         except Exception:
             self._logger.exception("Error relaying LoRa packet to MQTT")
@@ -822,11 +824,27 @@ class MeshInterface:
             if psk[0] == 0:
                 return b""
             # Meshtastic default key (AES-128)
-            return bytes([
-                0xd4, 0xf1, 0xbb, 0x3a, 0x20, 0x29, 0x07, 0x59,
-                0xf0, 0xbc, 0xff, 0xab, 0xcf, 0x4e, 0x69, 0x01,
-            ])
-        if len(psk) == 16:
+            return bytes(
+                [
+                    0xD4,
+                    0xF1,
+                    0xBB,
+                    0x3A,
+                    0x20,
+                    0x29,
+                    0x07,
+                    0x59,
+                    0xF0,
+                    0xBC,
+                    0xFF,
+                    0xAB,
+                    0xCF,
+                    0x4E,
+                    0x69,
+                    0x01,
+                ]
+            )
+        if len(psk) == AES_128_KEY_LENGTH:
             return psk  # AES-128
         return psk  # AES-256 (32 bytes)
 

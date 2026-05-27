@@ -4,8 +4,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from custom_components.meshtastic.const import (
     CONF_OPTION_MQTT_PROXY,
     CONF_OPTION_MQTT_PROXY_DOWNLINK,

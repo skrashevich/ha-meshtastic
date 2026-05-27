@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: MIT
 
-"""Tests for MQTT proxy interface functionality.
+"""
+Tests for MQTT proxy interface functionality.
 
 Tests cover:
 - AES encryption / decryption round-trip
@@ -15,7 +16,7 @@ Tests cover:
 from __future__ import annotations
 
 import struct
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -24,9 +25,7 @@ from custom_components.meshtastic.aiomeshtastic.protobuf import (
     channel_pb2,
     mesh_pb2,
     mqtt_pb2,
-    portnums_pb2,
 )
-
 
 # ---------------------------------------------------------------------------
 # PSK expansion
@@ -47,10 +46,26 @@ class TestExpandPsk:
         """Index 1 = Meshtastic default AES-128 key."""
         key = MeshInterface._expand_psk(b"\x01")
         assert len(key) == 16
-        assert key == bytes([
-            0xD4, 0xF1, 0xBB, 0x3A, 0x20, 0x29, 0x07, 0x59,
-            0xF0, 0xBC, 0xFF, 0xAB, 0xCF, 0x4E, 0x69, 0x01,
-        ])
+        assert key == bytes(
+            [
+                0xD4,
+                0xF1,
+                0xBB,
+                0x3A,
+                0x20,
+                0x29,
+                0x07,
+                0x59,
+                0xF0,
+                0xBC,
+                0xFF,
+                0xAB,
+                0xCF,
+                0x4E,
+                0x69,
+                0x01,
+            ]
+        )
 
     def test_16_byte_psk_passthrough(self):
         """AES-128 key passed through unchanged."""
@@ -304,7 +319,11 @@ class TestRelayLoraMqttGating:
         await iface._relay_lora_to_mqtt(fr)
 
         call_kwargs = iface._mqtt_client.publish.call_args
-        payload = call_kwargs.kwargs.get("payload") or call_kwargs.args[1] if len(call_kwargs.args) > 1 else call_kwargs.kwargs["payload"]
+        payload = (
+            call_kwargs.kwargs.get("payload") or call_kwargs.args[1]
+            if len(call_kwargs.args) > 1
+            else call_kwargs.kwargs["payload"]
+        )
 
         # Deserialize and verify
         envelope = mqtt_pb2.ServiceEnvelope()

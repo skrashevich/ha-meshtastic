@@ -52,8 +52,9 @@ def _load_package_init(package_name: str, package_dir: Path):
     _ensure_package(package_name, package_dir)
     init_file = package_dir / "__init__.py"
     if init_file.exists():
-        spec = importlib.util.spec_from_file_location(package_name, init_file,
-                                                       submodule_search_locations=[str(package_dir)])
+        spec = importlib.util.spec_from_file_location(
+            package_name, init_file, submodule_search_locations=[str(package_dir)]
+        )
         spec.loader.exec_module(sys.modules[package_name])
 
 
@@ -82,7 +83,6 @@ from custom_components.meshtastic.aiomeshtastic.protobuf import (  # noqa: E402
     channel_pb2,
     localonly_pb2,
     mesh_pb2,
-    mqtt_pb2,
     portnums_pb2,
 )
 
@@ -137,8 +137,6 @@ _import_module_from_path(
     "custom_components.meshtastic.aiomeshtastic.interface",
     _AIO_ROOT / "interface.py",
 )
-
-from custom_components.meshtastic.aiomeshtastic.interface import MeshInterface  # noqa: E402
 
 
 @pytest.fixture
