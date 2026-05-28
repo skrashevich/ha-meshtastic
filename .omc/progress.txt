@@ -1,0 +1,13 @@
+## HA 2026.5 modernization (2026-05-28)
+
+### Done
+- Bumped minimum HA to 2026.5.0 (hacs.json, requirements.txt)
+- Replaced pyserial-asyncio with serialx in manifest and serial transport
+- Serial config flow uses SerialPortSelector (local USB + ESPHome proxies)
+- Text message API events include `channel_name` (from radio channel settings)
+- Added quality_scale.yaml (Bronze tracking; config-flow-test-coverage still todo)
+- README removal instructions
+- tests/test_api_text_message.py (2 tests), 45 tests pass
+
+### TCP bridge note
+Official integration connects to go-meshtastic-serial2tcp on port 4403 via TCP; no protobuf JSON extension needed. channel_name is exposed via `meshtastic_api_text_message` event `data.channel_name`.

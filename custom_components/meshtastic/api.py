@@ -274,6 +274,14 @@ class MeshtasticApiClient:
 
         self._hass.bus.async_fire(EVENT_MESHTASTIC_API_NODE_UPDATED, event_data)
 
+    def _channel_name(self, channel_index: int | None) -> str | None:
+        if channel_index is None:
+            return None
+        channels = self._interface.connected_node_channels()
+        if not channels or channel_index >= len(channels):
+            return None
+        return channels[channel_index].settings.name or "LongFast"
+
     async def _on_text_message(self, node: MeshNode, packet: Packet) -> None:
         if packet.to_id == MeshInterface.BROADCAST_NUM:
             to_channel = packet.channel_index
@@ -282,15 +290,18 @@ class MeshtasticApiClient:
             to_channel = None
             to_node = packet.to_id
 
-        event_data = self._build_event_data(
-            node.id,
-            {
-                "from": packet.from_id,
-                "to": {"node": to_node, "channel": to_channel},
-                "gateway": self.get_own_node()["num"],
-                "message": packet.app_payload,
-            },
-        )
+        to: dict[str, Any] = {"node": to_node, "channel": to_channel}
+        if to_channel is not None:
+            to["channel_name"] = self._channel_name(to_channel) or ""
+
+        payload: dict[str, Any] = {
+            "from": packet.from_id,
+            "to": to,
+            "gateway": self.get_own_node()["num"],
+            "message": packet.app_payload,
+        }
+
+        event_data = self._build_event_data(node.id, payload)
 
         event_data["message_id"] = packet.mesh_packet.id
         self._hass.bus.async_fire(EVENT_MESHTASTIC_API_TEXT_MESSAGE, event_data)

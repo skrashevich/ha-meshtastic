@@ -5,11 +5,10 @@
 import asyncio
 import contextlib
 import re
-from asyncio import StreamReader, StreamReaderProtocol, StreamWriter
-from typing import cast
+from asyncio import StreamReader
 
-import serial
-import serial_asyncio
+import serialx
+from serialx import open_serial_connection
 
 from custom_components.meshtastic.aiomeshtastic.connection import (
     ClientApiConnectionError,
@@ -23,33 +22,25 @@ class SerialConnectionError(ClientApiConnectionError):
     pass
 
 
-class SerialConnection(StreamingClientTransport, asyncio.Protocol):
+class SerialConnection(StreamingClientTransport):
     def __init__(self, device: str, baud_rate: int = 115200, *, debug_logs: bool = False) -> None:
         super().__init__()
         self._log_reader_task: asyncio.Task | None = None
         self._log_reader: StreamReader | None = None
-        self._writer: StreamWriter | None = None
-        self._reader: StreamReader | None = None
+        self._writer: asyncio.StreamWriter | None = None
+        self._reader: asyncio.StreamReader | None = None
         self._device = device
         self._baud_rate = baud_rate
         self._debug_logs = debug_logs
 
     async def _connect(self) -> None:
-        loop = asyncio.get_running_loop()
-        reader = StreamReader(loop=loop)
-        protocol = StreamReaderProtocol(reader, loop=loop)
-        transport, _ = await serial_asyncio.create_serial_connection(
-            loop,
-            lambda: protocol,
+        self._reader, self._writer = await open_serial_connection(
             self._device,
             baudrate=self._baud_rate,
-            exclusive=True,
         )
-        writer = StreamWriter(transport, protocol, reader, loop)
-        self._reader = reader
-        self._writer = writer
 
         if self._debug_logs:
+            loop = asyncio.get_running_loop()
             self._log_reader = StreamReader(loop=loop)
 
             async def read_log(reader: StreamReader) -> None:
@@ -84,14 +75,15 @@ class SerialConnection(StreamingClientTransport, asyncio.Protocol):
             self._log_reader_task = asyncio.create_task(read_log(self._log_reader), name="log")
 
     async def _disconnect(self) -> None:
-        if self._writer:
+        if self._writer is not None:
             self._writer.close()
-            cast("serial_asyncio.SerialTransport", self._writer.transport).serial.close()
+            with contextlib.suppress(Exception):
+                await self._writer.wait_closed()
             self._writer = None
             self._reader = None
 
         if self._log_reader:
-            self._log_reader.at_eof()
+            self._log_reader.feed_eof()
             self._log_reader = None
 
         if self._log_reader_task is not None:
@@ -124,11 +116,12 @@ class SerialConnection(StreamingClientTransport, asyncio.Protocol):
             if exactly is not None:
                 return await self._reader.readexactly(exactly)
             return await self._reader.read(n=n)
-        except serial.serialutil.SerialException as e:
+        except (serialx.SerialException, OSError) as e:
             raise SerialConnectionError from e
 
     async def _write_bytes(self, data: bytes) -> bool:
         if self._writer is None:
             return False
         self._writer.write(data)
+        await self._writer.drain()
         return True

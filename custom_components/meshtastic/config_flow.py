@@ -17,6 +17,7 @@ from homeassistant.helpers.selector import (
     SelectOptionDict,
     SelectSelector,
     SelectSelectorConfig,
+    SerialPortSelector,
 )
 
 from . import CONF_OPTION_WEB_CLIENT, CURRENT_CONFIG_VERSION_MINOR
@@ -105,9 +106,15 @@ def _step_user_data_connection_bluetooth_schema_factory(address: str = "") -> vo
 
 
 def _step_user_data_connection_serial_schema_factory(device: str = "") -> vol.Schema:
+    if device:
+        return vol.Schema(
+            {
+                vol.Required(CONF_CONNECTION_SERIAL_PORT, default=device): SerialPortSelector(),
+            }
+        )
     return vol.Schema(
         {
-            vol.Required(CONF_CONNECTION_SERIAL_PORT, default=device): cv.string,
+            vol.Required(CONF_CONNECTION_SERIAL_PORT): SerialPortSelector(),
         }
     )
 

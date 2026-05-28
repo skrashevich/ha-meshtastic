@@ -1,0 +1,22 @@
+rules:
+  # Bronze tier — tracked for Home Assistant 2026.5+ compliance
+  config-flow: done
+  config-flow-test-coverage: todo
+  test-before-configure: done
+  test-before-setup: done
+  unique-config-entry: done
+  runtime-data: done
+  entity-unique-id: done
+  has-entity-name: done
+  action-setup: done
+  appropriate-polling: done
+  dependency-transparency: done
+  common-modules: done
+  entity-event-setup: done
+  brands:
+    status: exempt
+    comment: Custom HACS integration; brand assets follow upstream meshtastic/home-assistant.
+  docs-high-level-description: done
+  docs-installation-instructions: done
+  docs-removal-instructions: done
+  docs-actions: done

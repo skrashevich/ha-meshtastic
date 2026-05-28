@@ -1,0 +1,55 @@
+{
+  "title": "Home Assistant 2026.5+ modernization for Meshtastic integration",
+  "goal": "Update ha-meshtastic for Home Assistant 2026.5+: serialx serial stack, version pins, quality_scale Bronze tracking, channel_name on text message events, and SerialPortSelector in config flow.",
+  "stories": [
+    {
+      "id": "US-001",
+      "title": "Bump HA minimum version and dependencies to 2026.5",
+      "passes": true,
+      "acceptanceCriteria": [
+        "hacs.json requires homeassistant 2026.5.0",
+        "requirements.txt pins homeassistant==2026.5.0",
+        "manifest.json uses serialx instead of pyserial-asyncio"
+      ]
+    },
+    {
+      "id": "US-002",
+      "title": "Migrate serial transport from pyserial to serialx",
+      "passes": true,
+      "acceptanceCriteria": [
+        "aiomeshtastic/connection/serial.py uses serialx.open_serial_connection",
+        "No direct import of serial or serial_asyncio in serial.py",
+        "Disconnect path closes writer without pyserial-specific transport casts"
+      ]
+    },
+    {
+      "id": "US-003",
+      "title": "channel_name on text message API events",
+      "passes": true,
+      "acceptanceCriteria": [
+        "_on_text_message includes channel_name when packet is on a channel",
+        "channel_name resolved from connected_node_channels with LongFast fallback",
+        "Unit test asserts channel_name in fired event payload"
+      ]
+    },
+    {
+      "id": "US-004",
+      "title": "Config flow uses HA 2026 SerialPortSelector",
+      "passes": true,
+      "acceptanceCriteria": [
+        "Manual serial setup uses SerialPortSelector instead of plain cv.string",
+        "Translations still describe serial_port field"
+      ]
+    },
+    {
+      "id": "US-005",
+      "title": "quality_scale.yaml and verification",
+      "passes": true,
+      "acceptanceCriteria": [
+        "quality_scale.yaml exists with Bronze rules tracked",
+        "pytest tests/ passes",
+        "ruff check on changed Python files passes"
+      ]
+    }
+  ]
+}

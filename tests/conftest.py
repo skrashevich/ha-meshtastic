@@ -86,15 +86,21 @@ from custom_components.meshtastic.aiomeshtastic.protobuf import (  # noqa: E402
     portnums_pb2,
 )
 
-# --- Mock homeassistant.util.ssl so we can import interface.py ---
+# --- Mock homeassistant so we can import interface.py and api.py ---
 for mod_name in (
     "homeassistant",
     "homeassistant.util",
     "homeassistant.util.ssl",
     "homeassistant.util.event_type",
     "homeassistant.util.hass_dict",
+    "homeassistant.exceptions",
+    "homeassistant.core",
 ):
     sys.modules.setdefault(mod_name, MagicMock())
+
+_ha_exceptions = sys.modules["homeassistant.exceptions"]
+if not isinstance(getattr(_ha_exceptions, "IntegrationError", None), type):
+    _ha_exceptions.IntegrationError = type("IntegrationError", (Exception,), {})
 
 # --- Import const.py directly (only needs homeassistant.util.event_type) ---
 const_mod = _import_module_from_path(
@@ -131,6 +137,21 @@ _import_module_from_path(
     "custom_components.meshtastic.aiomeshtastic.connection.streaming",
     _conn_root / "streaming.py",
 )
+_import_module_from_path(
+    "custom_components.meshtastic.aiomeshtastic.connection.tcp",
+    _conn_root / "tcp.py",
+)
+_import_module_from_path(
+    "custom_components.meshtastic.aiomeshtastic.connection.serial",
+    _conn_root / "serial.py",
+)
+for _bleak_mod in ("bleak", "bleak_retry_connector"):
+    sys.modules.setdefault(_bleak_mod, MagicMock())
+_import_module_from_path(
+    "custom_components.meshtastic.aiomeshtastic.connection.bluetooth",
+    _conn_root / "bluetooth.py",
+)
+_load_package_init("custom_components.meshtastic.aiomeshtastic", _AIO_ROOT)
 
 # --- Import the MeshInterface itself ---
 _import_module_from_path(

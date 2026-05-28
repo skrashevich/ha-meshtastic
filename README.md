@@ -59,6 +59,14 @@ For more details, see check the [documentation](#documentation).
 
 ### Configuration is done in the UI
 
+## Removal
+
+1. Go to **Settings** → **Devices & services**.
+2. Open the **Meshtastic** integration entry and choose **Delete**.
+3. If you installed via HACS, remove the custom repository or uninstall the integration from HACS.
+4. Remove the `custom_components/meshtastic` folder if you installed manually.
+5. Restart Home Assistant.
+
 <!---->
 
 # Documentation
