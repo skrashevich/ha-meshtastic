@@ -363,9 +363,9 @@ If you want to contribute to this please read the [Contribution guidelines](CONT
 
 ***
 
-[commits-shield]: https://img.shields.io/github/commit-activity/y/meshtastic/home-assistant.svg?style=for-the-badge
-[commits]: https://github.com/meshtastic/home-assistant/commits/main
-[license-shield]: https://img.shields.io/github/license/meshtastic/home-assistant.svg?style=for-the-badge
-[releases-shield]: https://img.shields.io/github/release/meshtastic/home-assistant.svg?style=for-the-badge
-[releases]: https://github.com/meshtastic/home-assistant/releases
+[commits-shield]: https://img.shields.io/github/commit-activity/y/skrashevich/ha-meshtastic.svg?style=for-the-badge
+[commits]: https://github.com/skrashevich/ha-meshtastic/commits/main
+[license-shield]: https://img.shields.io/github/license/skrashevich/ha-meshtastic.svg?style=for-the-badge
+[releases-shield]: https://img.shields.io/github/release/skrashevich/ha-meshtastic.svg?style=for-the-badge
+[releases]: https://github.com/skrashevich/ha-meshtastic/releases
 

@@ -19,10 +19,10 @@
     "@broglep"
   ],
   "config_flow": true,
-  "documentation": "https://github.com/meshtastic/home-assistant",
+  "documentation": "https://github.com/skrashevich/ha-meshtastic",
   "integration_type": "hub",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/meshtastic/home-assistant/issues",
+  "issue_tracker": "https://github.com/skrashevich/ha-meshtastic/issues",
   "requirements": [
     "serialx>=1.2.2",
     "aiomqtt"

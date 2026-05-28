@@ -15,7 +15,7 @@ rules:
   entity-event-setup: done
   brands:
     status: exempt
-    comment: Custom HACS integration; brand assets follow upstream meshtastic/home-assistant.
+    comment: Custom HACS integration; brand assets follow upstream skrashevich/ha-meshtastic.
   docs-high-level-description: done
   docs-installation-instructions: done
   docs-removal-instructions: done
