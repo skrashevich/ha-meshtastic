@@ -4,6 +4,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 from copy import deepcopy
 from datetime import timedelta
 from functools import wraps
@@ -21,11 +23,12 @@ from .api import (
     EventMeshtasticApiTelemetryType,
     MeshtasticApiClientError,
 )
+from .admin_access import NODE_DATA_ADMIN_MANAGED
 from .const import CONF_OPTION_FILTER_NODES, DOMAIN, LOGGER
 
-if TYPE_CHECKING:
-    from collections.abc import Mapping
+from collections.abc import Mapping
 
+if TYPE_CHECKING:
     from homeassistant.core import Event, HomeAssistant, _DataT
 
     from .data import MeshtasticConfigEntry
@@ -90,8 +93,15 @@ class MeshtasticDataUpdateCoordinator(DataUpdateCoordinator):
         )
         self._remove_event_listeners.append(hass.bus.async_listen(EVENT_MESHTASTIC_API_TELEMETRY, self._api_telemetry))
         self._remove_event_listeners.append(hass.bus.async_listen(EVENT_MESHTASTIC_API_POSITION, self._api_position))
+        self._admin_refresh_task: asyncio.Task[None] | None = None
+        self._allow_admin_refresh = False
 
     async def async_shutdown(self) -> None:
+        if self._admin_refresh_task and not self._admin_refresh_task.done():
+            self._admin_refresh_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._admin_refresh_task
+
         await super().async_shutdown()
 
         for remove_listener in self._remove_event_listeners:
@@ -122,6 +132,8 @@ class MeshtasticDataUpdateCoordinator(DataUpdateCoordinator):
             metric_type = "localStats"
         elif telemetry_type == EventMeshtasticApiTelemetryType.POWER_METRICS:
             metric_type = "powerMetrics"
+        elif telemetry_type == EventMeshtasticApiTelemetryType.AIR_QUALITY_METRICS:
+            metric_type = "airQualityMetrics"
         elif telemetry_type == EventMeshtasticApiTelemetryType.ENVIRONMENT_METRICS:
             metric_type = "environmentMetrics"
         else:
@@ -178,6 +190,85 @@ class MeshtasticDataUpdateCoordinator(DataUpdateCoordinator):
             data[node_id] = event_data
             self.async_set_updated_data(data)
 
+    def schedule_admin_refresh(self) -> None:
+        """Run admin discovery/polling in the background (never during HA bootstrap)."""
+        if self.config_entry is None or not self._allow_admin_refresh:
+            return
+        if self._admin_refresh_task and not self._admin_refresh_task.done():
+            return
+        self._admin_refresh_task = self.config_entry.async_create_background_task(
+            self.hass,
+            self._run_admin_refresh(),
+            name="meshtastic-admin-refresh",
+        )
+
+    async def _run_admin_refresh(self) -> None:
+        from .admin_setup import async_add_admin_gateway_entities  # noqa: PLC0415
+
+        if not self._allow_admin_refresh:
+            return
+
+        if self.config_entry is None or self.config_entry.runtime_data is None:
+            return
+
+        runtime_data = self.config_entry.runtime_data
+        filter_nodes = self.config_entry.options.get(CONF_OPTION_FILTER_NODES, [])
+        filter_node_nums = [el["id"] for el in filter_nodes]
+
+        try:
+            admin_managed, admin_denied = await runtime_data.client.async_refresh_admin_managed_nodes(
+                filter_node_nums,
+                runtime_data.admin_managed_nodes,
+                runtime_data.admin_denied_nodes,
+            )
+            runtime_data.admin_managed_nodes = admin_managed
+            runtime_data.admin_denied_nodes = admin_denied
+
+            node_infos = await runtime_data.client.async_get_all_nodes()
+            if self.data is None:
+                return
+
+            data = deepcopy(self.data)
+            gateway_id = runtime_data.gateway_node["num"]
+            for node_num, node_info in node_infos.items():
+                if node_num not in filter_node_nums:
+                    continue
+                data[node_num] = {
+                    **deepcopy(node_info),
+                    **(
+                        {NODE_DATA_ADMIN_MANAGED: True}
+                        if node_num in admin_managed and node_num != gateway_id
+                        else {}
+                    ),
+                }
+            self.async_set_updated_data(data)
+
+            await async_add_admin_gateway_entities(self.hass, self.config_entry, runtime_data.client)
+        except asyncio.CancelledError:
+            self._logger.debug("Admin refresh cancelled")
+            raise
+        except Exception:  # noqa: BLE001
+            self._logger.warning("Background admin refresh failed", exc_info=True)
+
+    def _build_coordinator_data(self, node_infos: Mapping[int, Mapping[str, Any]]) -> dict[int, dict[str, Any]]:
+        filter_nodes = self.config_entry.options.get(CONF_OPTION_FILTER_NODES, [])
+        filter_node_nums = [el["id"] for el in filter_nodes]
+        runtime_data = self.config_entry.runtime_data
+        gateway_id = runtime_data.gateway_node["num"]
+
+        return {
+            node_num: {
+                **deepcopy(node_info),
+                **(
+                    {NODE_DATA_ADMIN_MANAGED: True}
+                    if node_num in runtime_data.admin_managed_nodes and node_num != gateway_id
+                    else {}
+                ),
+            }
+            for node_num, node_info in node_infos.items()
+            if node_num in filter_node_nums
+        }
+
     async def _async_update_data(self) -> Any:
         if self.config_entry is None or self.config_entry.runtime_data is None:
             self._logger.warning("Update data requested but config entry is empty")
@@ -185,13 +276,8 @@ class MeshtasticDataUpdateCoordinator(DataUpdateCoordinator):
 
         try:
             node_infos = await self.config_entry.runtime_data.client.async_get_all_nodes()
-
-            filter_nodes = self.config_entry.options.get(CONF_OPTION_FILTER_NODES, [])
-            filter_node_nums = [el["id"] for el in filter_nodes]
-            return {
-                node_num: deepcopy(node_info)
-                for node_num, node_info in node_infos.items()
-                if node_num in filter_node_nums
-            }
+            if self._allow_admin_refresh and self.data is not None:
+                self.schedule_admin_refresh()
+            return self._build_coordinator_data(node_infos)
         except MeshtasticApiClientError as exception:
             raise UpdateFailed(exception) from exception

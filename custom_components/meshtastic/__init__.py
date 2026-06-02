@@ -20,7 +20,6 @@ from typing import TYPE_CHECKING, Any, cast
 
 from homeassistant import config_entries
 from homeassistant.components.logbook import DOMAIN as LOGBOOK_DOMAIN
-from homeassistant.config_entries import ConfigEntryState
 from homeassistant.const import (
     CONF_HOST,
     CONF_PORT,
@@ -168,10 +167,10 @@ async def async_setup_entry(
         integration=async_get_loaded_integration(hass, entry.domain),
         coordinator=coordinator,
         gateway_node=gateway_node,
+        admin_managed_nodes=set(),
+        admin_denied_nodes=set(),
+        admin_gateway_entities_added=set(),
     )
-
-    if entry.state == ConfigEntryState.SETUP_IN_PROGRESS:
-        await coordinator.async_config_entry_first_refresh()
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
@@ -195,7 +194,24 @@ async def async_setup_entry(
     ):
         await async_setup_tcp_proxy(hass, entry)
 
+    entry.async_create_background_task(
+        hass,
+        _finish_coordinator_setup(entry, coordinator),
+        name="meshtastic-coordinator-setup",
+    )
+
     return True
+
+
+async def _finish_coordinator_setup(entry: MeshtasticConfigEntry, coordinator: MeshtasticDataUpdateCoordinator) -> None:
+    """Prime coordinator and start admin polling after HA bootstrap (non-blocking)."""
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except Exception:  # noqa: BLE001
+        LOGGER.warning("Initial Meshtastic coordinator refresh failed", exc_info=True)
+
+    coordinator._allow_admin_refresh = True  # noqa: SLF001
+    coordinator.schedule_admin_refresh()
 
 
 async def _setup_meshtastic_devices(

@@ -142,6 +142,7 @@ class TelemetryType(enum.StrEnum):
     ENVIRONMENT_METRICS = "environment_metrics"
     POWER_METRICS = "power_metrics"
     AIR_QUALITY_METRICS = "air_quality_metrics"
+    LOCAL_STATS = "local_stats"
 
 
 class MeshInterface:
@@ -1187,6 +1188,90 @@ class MeshInterface:
 
         await self.send_admin_message_await_response(node=node, message=admin_message, expect_response=False)
 
+    def gateway_public_key(self) -> bytes | None:
+        """Public key of the connected gateway node."""
+        if not self._connected_node_ready.is_set():
+            return None
+        public_key = self._connected_node_local_config.security.public_key
+        return public_key if public_key else None
+
+    async def get_remote_config(
+        self,
+        node: int,
+        config_type: admin_pb2.AdminMessage.ConfigType.ValueType,
+        *,
+        timeout: float = UNDEFINED,  # noqa: ASYNC109
+    ) -> config_pb2.Config | None:
+        admin_message = admin_pb2.AdminMessage()
+        admin_message.get_config_request = config_type
+        try:
+            response = await self.send_admin_message_await_response(
+                node=node,
+                message=admin_message,
+                timeout=timeout,
+            )
+        except Exception:
+            self._logger.debug(
+                "Failed to read config type %s from node %s",
+                config_type,
+                node,
+                exc_info=True,
+            )
+            return None
+        else:
+            return response.app_payload.get_config_response
+
+    async def get_remote_module_config(
+        self,
+        node: int,
+        module_type: admin_pb2.AdminMessage.ModuleConfigType.ValueType,
+        *,
+        timeout: float = UNDEFINED,  # noqa: ASYNC109
+    ) -> module_config_pb2.ModuleConfig | None:
+        admin_message = admin_pb2.AdminMessage()
+        admin_message.get_module_config_request = module_type
+        try:
+            response = await self.send_admin_message_await_response(
+                node=node,
+                message=admin_message,
+                timeout=timeout,
+            )
+        except Exception:
+            self._logger.debug(
+                "Failed to read module config type %s from node %s",
+                module_type,
+                node,
+                exc_info=True,
+            )
+            return None
+        else:
+            return response.app_payload.get_module_config_response
+
+    async def node_has_gateway_admin_access(self, node: int) -> bool:
+        """True when the remote node lists this gateway's public key as an admin key."""
+        if not self._connected_node_info:
+            return False
+        if node == self._connected_node_info.my_node_num:
+            return True
+
+        gateway_public_key = self.gateway_public_key()
+        if not gateway_public_key:
+            return False
+
+        from ..admin_access import admin_key_list_contains, security_config_admin_keys
+
+        from ..const import ADMIN_PROBE_TIMEOUT
+
+        security_config = await self.get_remote_config(
+            node,
+            admin_pb2.AdminMessage.ConfigType.SECURITY_CONFIG,
+            timeout=ADMIN_PROBE_TIMEOUT,
+        )
+        if security_config is None or not security_config.HasField("security"):
+            return False
+
+        return admin_key_list_contains(security_config_admin_keys(security_config.security), gateway_public_key)
+
     async def request_telemetry(
         self,
         node: int | MeshNode,
@@ -1203,6 +1288,8 @@ class MeshInterface:
             telemetry.air_quality_metrics.CopyFrom(telemetry_pb2.AirQualityMetrics())
         elif telemetry_type == TelemetryType.POWER_METRICS:
             telemetry.power_metrics.CopyFrom(telemetry_pb2.PowerMetrics())
+        elif telemetry_type == TelemetryType.LOCAL_STATS:
+            telemetry.local_stats.CopyFrom(telemetry_pb2.LocalStats())
         else:
             msg = "Invalid telemetry type"
             raise ValueError(msg)
@@ -1389,6 +1476,25 @@ class MeshInterface:
             self._add_background_task(
                 listener(node, node_info_packet), name=f"app-listener-{portnums_pb2.PortNum.NODEINFO_APP}"
             )
+
+    async def apply_telemetry_dict(self, node_id: int, telemetry: Mapping[str, Any]) -> bool:
+        """Merge polled or received telemetry into the node database."""
+        telemetry_fields = (
+            "deviceMetrics",
+            "environmentMetrics",
+            "airQualityMetrics",
+            "powerMetrics",
+            "localStats",
+            "healthMetrics",
+        )
+        updates = {key: telemetry[key] for key in telemetry_fields if key in telemetry}
+        if not updates:
+            return False
+        return await self._node_database_update(node_id, **updates)
+
+    async def apply_position_dict(self, node_id: int, position: Mapping[str, Any]) -> bool:
+        """Merge polled or received position into the node database."""
+        return await self._node_database_update(node_id, position=dict(position))
 
     async def _node_database_update(self, node_id: int, **kwargs: Any) -> bool:
         if node_id not in self._node_database:

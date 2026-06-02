@@ -12,6 +12,9 @@ LOGGER: Logger = getLogger(__package__)
 
 DOMAIN = "meshtastic"
 
+ADMIN_PROBE_TIMEOUT = 15
+ADMIN_POLL_TIMEOUT = 25
+
 CONF_CONNECTION_TYPE = "connection_type"
 
 CURRENT_CONFIG_VERSION_MAJOR = 1
@@ -105,7 +108,9 @@ class MeshtasticDomainEventData(TypedDict):
 
 
 # Primary user facing event
-EVENT_MESHTASTIC_DOMAIN_EVENT: EventType[MeshtasticDomainEventData] = EventType(f"{DOMAIN}_event")
+EVENT_MESHTASTIC_DOMAIN_EVENT: EventType[MeshtasticDomainEventData] = EventType(
+    f"{DOMAIN}_event"
+)
 
 
 EVENT_MESHTASTIC_MESSAGE_LOG_EVENT_DATA_ATTR_FROM_NAME: Final = "from_name"
@@ -123,6 +128,8 @@ class MeshtasticDomainMessageLogEventData(TypedDict):
 
 
 # Event used for logbook
-EVENT_MESHTASTIC_DOMAIN_MESSAGE_LOG: EventType[MeshtasticDomainMessageLogEventData] = EventType(f"{DOMAIN}_message_log")
+EVENT_MESHTASTIC_DOMAIN_MESSAGE_LOG: EventType[MeshtasticDomainMessageLogEventData] = (
+    EventType(f"{DOMAIN}_message_log")
+)
 
 URL_BASE = "/meshtastic"

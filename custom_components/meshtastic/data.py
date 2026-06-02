@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from homeassistant.util.hass_dict import HassKey
@@ -30,6 +30,9 @@ class MeshtasticData:
     coordinator: MeshtasticDataUpdateCoordinator
     integration: Integration
     gateway_node: dict
+    admin_managed_nodes: set[int] = field(default_factory=set)
+    admin_denied_nodes: set[int] = field(default_factory=set)
+    admin_gateway_entities_added: set[int] = field(default_factory=set)
 
 
 DATA_COMPONENT: HassKey[EntityComponent[MeshtasticEntity]] = HassKey(DOMAIN)

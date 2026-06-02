@@ -31,8 +31,10 @@ from .aiomeshtastic import (
     TcpConnection as AioTcpConnection,
 )
 from .aiomeshtastic.errors import MeshRoutingError, MeshtasticError
+from .aiomeshtastic.interface import TelemetryType
 from .aiomeshtastic.protobuf import portnums_pb2
 from .const import (
+    ADMIN_POLL_TIMEOUT,
     CONF_CONNECTION_BLUETOOTH_ADDRESS,
     CONF_CONNECTION_SERIAL_PORT,
     CONF_CONNECTION_TCP_HOST,
@@ -75,6 +77,7 @@ class EventMeshtasticApiTelemetryType(StrEnum):
     LOCAL_STATS = "local_stats"
     ENVIRONMENT_METRICS = "environment_metrics"
     POWER_METRICS = "power_metrics"
+    AIR_QUALITY_METRICS = "air_quality_metrics"
 
 
 class MeshtasticApiClientError(IntegrationError):
@@ -337,6 +340,139 @@ class MeshtasticApiClient:
             event_data[ATTR_EVENT_MESHTASTIC_API_TELEMETRY_TYPE] = EventMeshtasticApiTelemetryType.POWER_METRICS
             self._hass.bus.async_fire(EVENT_MESHTASTIC_API_TELEMETRY, event_data)
 
+        air_quality_metrics = telemetry.get("airQualityMetrics")
+        if air_quality_metrics:
+            event_data = self._build_event_data(node.id, air_quality_metrics)
+            event_data[ATTR_EVENT_MESHTASTIC_API_NODE_INFO] = node_info
+            event_data[ATTR_EVENT_MESHTASTIC_API_TELEMETRY_TYPE] = EventMeshtasticApiTelemetryType.AIR_QUALITY_METRICS
+            self._hass.bus.async_fire(EVENT_MESHTASTIC_API_TELEMETRY, event_data)
+
+    async def _publish_telemetry_dict(self, node_id: int, telemetry: Mapping[str, Any]) -> None:
+        node = self.get_node_info(node_id) or self._interface.find_node(node_id=node_id)
+        if node is None:
+            from .aiomeshtastic.interface import MeshNode
+
+            node = MeshNode.stub_node(node_id)
+        await self._on_telemetry(node, dict(telemetry))
+
+    async def _publish_position_dict(self, node_id: int, position: Mapping[str, Any]) -> None:
+        node = self.get_node_info(node_id) or self._interface.find_node(node_id=node_id)
+        if node is None:
+            from .aiomeshtastic.interface import MeshNode
+
+            node = MeshNode.stub_node(node_id)
+        await self._on_position(node, dict(position))
+
+    async def async_node_has_gateway_admin_access(self, node_id: int) -> bool:
+        return await self._interface.node_has_gateway_admin_access(node_id)
+
+    async def _poll_telemetry_type(self, node_id: int, telemetry_type: TelemetryType) -> None:
+        try:
+            telemetry = await self.request_telemetry(node_id, telemetry_type, timeout=ADMIN_POLL_TIMEOUT)
+        except MeshtasticApiClientError:
+            self._logger.debug(
+                "Admin telemetry poll failed for node %s (%s)",
+                node_id,
+                telemetry_type,
+                exc_info=True,
+            )
+        else:
+            await self._interface.apply_telemetry_dict(node_id, telemetry)
+            await self._publish_telemetry_dict(node_id, telemetry)
+
+    async def poll_admin_managed_node(self, node_id: int) -> None:
+        """Request telemetry and position from a node that trusts this gateway as admin."""
+        await asyncio.gather(
+            *(self._poll_telemetry_type(node_id, telemetry_type) for telemetry_type in TelemetryType),
+            return_exceptions=True,
+        )
+
+        try:
+            position = await self.request_position(node_id, timeout=ADMIN_POLL_TIMEOUT)
+        except MeshtasticApiClientError:
+            self._logger.debug("Admin position poll failed for node %s", node_id, exc_info=True)
+        else:
+            await self._interface.apply_position_dict(node_id, position)
+            await self._publish_position_dict(node_id, position)
+
+    async def async_get_remote_local_config(self, node_id: int) -> dict[str, Any]:
+        from .aiomeshtastic.protobuf import admin_pb2
+
+        local_config: dict[str, Any] = {}
+        config_field_map = {
+            admin_pb2.AdminMessage.ConfigType.DEVICE_CONFIG: "device",
+            admin_pb2.AdminMessage.ConfigType.POSITION_CONFIG: "position",
+            admin_pb2.AdminMessage.ConfigType.POWER_CONFIG: "power",
+            admin_pb2.AdminMessage.ConfigType.NETWORK_CONFIG: "network",
+            admin_pb2.AdminMessage.ConfigType.DISPLAY_CONFIG: "display",
+            admin_pb2.AdminMessage.ConfigType.LORA_CONFIG: "lora",
+            admin_pb2.AdminMessage.ConfigType.BLUETOOTH_CONFIG: "bluetooth",
+            admin_pb2.AdminMessage.ConfigType.SECURITY_CONFIG: "security",
+        }
+        for config_type, field_name in config_field_map.items():
+            config = await self._interface.get_remote_config(node_id, config_type)
+            if config is not None and config.HasField(field_name):
+                local_config[field_name] = self._message_to_dict(getattr(config, field_name))
+        return local_config
+
+    async def async_get_remote_module_config(self, node_id: int) -> dict[str, Any]:
+        from .aiomeshtastic.protobuf import admin_pb2
+
+        module_config: dict[str, Any] = {}
+        module_field_map = {
+            admin_pb2.AdminMessage.ModuleConfigType.MQTT_CONFIG: "mqtt",
+            admin_pb2.AdminMessage.ModuleConfigType.SERIAL_CONFIG: "serial",
+            admin_pb2.AdminMessage.ModuleConfigType.EXTNOTIF_CONFIG: "external_notification",
+            admin_pb2.AdminMessage.ModuleConfigType.STOREFORWARD_CONFIG: "store_forward",
+            admin_pb2.AdminMessage.ModuleConfigType.RANGETEST_CONFIG: "range_test",
+            admin_pb2.AdminMessage.ModuleConfigType.TELEMETRY_CONFIG: "telemetry",
+            admin_pb2.AdminMessage.ModuleConfigType.CANNEDMSG_CONFIG: "canned_message",
+            admin_pb2.AdminMessage.ModuleConfigType.AUDIO_CONFIG: "audio",
+            admin_pb2.AdminMessage.ModuleConfigType.REMOTEHARDWARE_CONFIG: "remote_hardware",
+            admin_pb2.AdminMessage.ModuleConfigType.NEIGHBORINFO_CONFIG: "neighbor_info",
+            admin_pb2.AdminMessage.ModuleConfigType.AMBIENTLIGHTING_CONFIG: "ambient_lighting",
+            admin_pb2.AdminMessage.ModuleConfigType.DETECTIONSENSOR_CONFIG: "detection_sensor",
+            admin_pb2.AdminMessage.ModuleConfigType.PAXCOUNTER_CONFIG: "paxcounter",
+        }
+        for module_type, field_name in module_field_map.items():
+            config = await self._interface.get_remote_module_config(node_id, module_type)
+            if config is not None and config.HasField(field_name):
+                module_config[field_name] = self._message_to_dict(getattr(config, field_name))
+        return module_config
+
+    async def async_refresh_admin_managed_nodes(
+        self,
+        node_ids: list[int],
+        admin_managed_nodes: set[int],
+        admin_denied_nodes: set[int],
+    ) -> tuple[set[int], set[int]]:
+        """Detect admin-managed child nodes and poll their restricted data."""
+        gateway_id = self.get_own_node().get("num")
+        node_id_set = set(node_ids)
+        updated_admin_nodes = {node for node in admin_managed_nodes if node in node_id_set}
+        updated_denied_nodes = {node for node in admin_denied_nodes if node in node_id_set}
+
+        try:
+            for node_id in node_id_set:
+                if node_id == gateway_id:
+                    continue
+
+                if node_id not in updated_admin_nodes:
+                    if node_id in updated_denied_nodes:
+                        continue
+                    if not await self.async_node_has_gateway_admin_access(node_id):
+                        updated_denied_nodes.add(node_id)
+                        continue
+                    updated_admin_nodes.add(node_id)
+                    self._logger.info("Node %s grants admin access to this gateway", node_id)
+
+                await self.poll_admin_managed_node(node_id)
+        except asyncio.CancelledError:
+            self._logger.debug("Admin refresh cancelled while polling nodes")
+            raise
+
+        return updated_admin_nodes, updated_denied_nodes
+
     async def _on_position(self, node: MeshNode, position: dict[str, Any]) -> None:
         self._modify_position(position)
 
@@ -352,13 +488,20 @@ class MeshtasticApiClient:
             position["longitude"] = float(position["longitudeI"] * 10**-7)
 
     async def _process_meshtastic_packet(self) -> None:
-        async for packet in self._interface.packet_stream():
+        async for mesh_packet in self._interface.packet_stream():
             try:
-                packet_clone = google.protobuf.json_format.MessageToDict(packet)
-                node_id = packet_clone["from"]
-                self._hass.bus.async_fire(EVENT_MESHTASTIC_API_PACKET, self._build_event_data(node_id, packet_clone))
-            except:  # noqa: E722
-                self._logger.warning("Failed to process packet %s", packet, exc_info=True)
+                from_node = getattr(mesh_packet, "from", None)
+                if from_node is None:
+                    continue
+
+                packet_clone = dict(self._message_to_dict(mesh_packet))
+                packet_clone.setdefault("from", from_node)
+                self._hass.bus.async_fire(
+                    EVENT_MESHTASTIC_API_PACKET,
+                    self._build_event_data(from_node, packet_clone),
+                )
+            except Exception:  # noqa: BLE001
+                self._logger.debug("Failed to process packet %s", mesh_packet, exc_info=True)
 
     def _add_background_task(self, coro: Coroutine[Any, Any, None], name: str | None = None) -> asyncio.Task:
         task = asyncio.create_task(coro, name=name)
@@ -373,9 +516,12 @@ class MeshtasticApiClient:
             # older protobuf version
             return MessageToDict(message, including_default_value_fields=True)
 
-    async def request_telemetry(self, node: int, telemetry_type: TelemetryType) -> Mapping[str, Any]:
+    async def request_telemetry(
+        self, node: int, telemetry_type: TelemetryType, timeout: float | None = None
+    ) -> Mapping[str, Any]:
         try:
-            response = await self._interface.request_telemetry(node, telemetry_type=telemetry_type)
+            kwargs = {} if timeout is None else {"timeout": timeout}
+            response = await self._interface.request_telemetry(node, telemetry_type=telemetry_type, **kwargs)
             return self._message_to_dict(response)
         except MeshRoutingError as e:
             msg = f"No response for {telemetry_type}"
@@ -383,9 +529,10 @@ class MeshtasticApiClient:
         except MeshtasticError as e:
             raise MeshtasticApiClientError(str(e)) from e
 
-    async def request_position(self, node: int) -> Mapping[str, Any]:
+    async def request_position(self, node: int, timeout: float | None = None) -> Mapping[str, Any]:
         try:
-            response = await self._interface.request_position(node)
+            kwargs = {} if timeout is None else {"timeout": timeout}
+            response = await self._interface.request_position(node, **kwargs)
             return self._message_to_dict(response)
         except MeshtasticError as e:
             raise MeshtasticApiClientError(str(e)) from e
